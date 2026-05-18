@@ -1,102 +1,34 @@
 use pgp::{
-    composed::{
-        ArmorOptions, EncryptionCaps, KeyType, SecretKeyParamsBuilder, SignedSecretKey,
-        SubkeyParamsBuilder, SubkeyParamsBuilderError,
-    },
+    composed::{ArmorOptions, EncryptionCaps, KeyType, SecretKeyParamsBuilder, SignedSecretKey},
     crypto::ecc_curve::ECCCurve,
 };
 use rand::thread_rng;
 
-/// Generate a private example key and the equivalent certificate (aka public key).
-/// Store these two artifacts in `example-key.priv` and `example-key.pub`, respectively.
-///
-/// These keys can be reused in the separate `encrypt_decrypt` example!
 fn main() {
-    // Generate a new OpenPGP private key (TSK)
-    let secret_key = keygen(
-        KeyType::Ed25519Legacy,              // primary
-        KeyType::Ed25519Legacy,              // signing subkey
-        KeyType::ECDH(ECCCurve::Curve25519), // encryption subkey
-        KeyType::Ed25519Legacy,              // authentication subkey
-        "empty?",                            // user id
-    )
-    .expect("failed during keygen");
+    // Generate a single, ultra-slim primary key with ZERO subkeys
+    let secret_key = keygen_slim("user@example.com").expect("failed during slim keygen");
 
     let armor_opts = ArmorOptions::default();
-    println!(
-        // "Generated private key: {}",
-        "{}",
-        secret_key.to_armored_string(armor_opts).unwrap()
-    );
-
-    // // Save the private key to a file (as binary OpenPGP data)
-    // let mut priv_file =
-    //     std::fs::File::create("example-key.priv").expect("failed to create 'example-key.priv'");
-    // secret_key
-    //     .to_writer(&mut priv_file)
-    //     .expect("failed to write to 'example-key.priv'");
-
-    // // Derive the equivalent OpenPGP public key (TPK)
-    // // (this strips away the private elements of each component key and keeps all other elements)
-    // let public_key = SignedPublicKey::from(secret_key.clone());
-
-    // // Save the public key to a file (as binary OpenPGP data)
-    // let mut pub_file =
-    //     std::fs::File::create("example-key.pub").expect("failed to create 'example-key.pub'");
-    // public_key
-    //     .to_writer(&mut pub_file)
-    //     .expect("failed to write to 'example-key.pub'");
+    println!("{}", secret_key.to_armored_string(armor_opts).unwrap());
 }
 
-/// Generate a v4 OpenPGP private key (consisting of a primary key, three subkeys and one User ID).
-fn keygen(
-    primary_key_type: KeyType,
-    signing_key_type: KeyType,
-    encryption_key_type: KeyType,
-    auth_key_type: KeyType,
-    uid: &str,
-) -> Result<SignedSecretKey, SubkeyParamsBuilderError> {
-    // Set up builders for subkeys
-    let mut signkey = SubkeyParamsBuilder::default();
-    signkey
-        .key_type(signing_key_type)
-        .can_sign(true)
-        .can_encrypt(EncryptionCaps::None)
-        .can_authenticate(false);
-    let mut encryptkey = SubkeyParamsBuilder::default();
-    encryptkey
-        .key_type(encryption_key_type)
-        .can_sign(false)
-        .can_encrypt(EncryptionCaps::All)
-        .can_authenticate(false);
-    let mut authkey = SubkeyParamsBuilder::default();
-    authkey
-        .key_type(auth_key_type)
-        .can_sign(false)
-        .can_encrypt(EncryptionCaps::None)
-        .can_authenticate(true);
-
-    // Set up parameter builder for the full private key
+fn keygen_slim(uid: &str) -> Result<SignedSecretKey, pgp::composed::SubkeyParamsBuilderError> {
     let mut key_params = SecretKeyParamsBuilder::default();
+
+    // Consolidate all capabilities into the primary master key
     key_params
-        .key_type(primary_key_type)
-        .can_certify(true)
-        .can_sign(true)
-        .can_encrypt(EncryptionCaps::None)
+        .key_type(KeyType::Ed25519Legacy) // Compact, modern Edwards curve
+        .can_certify(true) // Must have to be a valid master key
+        .can_sign(true) // Handles data signing (e.g., Git commits)
+        .can_authenticate(true) // Handles SSH authentication
+        .can_encrypt(EncryptionCaps::None) // Ed25519 cannot natively encrypt data
         .primary_user_id(uid.into())
-        .subkeys(vec![
-            signkey.build()?,
-            encryptkey.build()?,
-            authkey.build()?,
-        ]);
+        .subkeys(vec![]); // <--- Completely empty! No subkeys.
 
-    // Generate the components of the private key (in particular: the secret key packets)
     let secret_key_params = key_params.build().expect("Build secret_key_params");
-
-    // Produce binding self-signatures that link all the components together
     let signed = secret_key_params
         .generate(thread_rng())
-        .expect("Generate plain key");
+        .expect("Generate key");
 
     Ok(signed)
 }
