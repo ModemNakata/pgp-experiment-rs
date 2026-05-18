@@ -1,9 +1,13 @@
 use pgp::{
     composed::{
-        ArmorOptions, EncryptionCaps, KeyType, SecretKeyParamsBuilder, SignedSecretKey,
-        SubkeyParamsBuilder,
+        ArmorOptions,
+        EncryptionCaps,
+        KeyType,
+        SecretKeyParamsBuilder,
+        SignedSecretKey,
+        // SubkeyParamsBuilder,
     },
-    crypto::ecc_curve::ECCCurve,
+    // crypto::ecc_curve::ECCCurve,
 };
 use rand::thread_rng;
 
